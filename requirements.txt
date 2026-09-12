@@ -1,0 +1,8 @@
+numpy>=2.0
+pandas>=2.2
+python-dotenv>=1.0
+scikit-learn>=1.5
+joblib>=1.4
+streamlit>=1.40
+webull-openapi-python-sdk
+tzdata>=2024.1

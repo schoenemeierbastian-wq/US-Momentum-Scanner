@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "us-momentum-scanner"
+version = "0.6.0"
+description = "Prospektiver US-Aktien-Momentum-Scanner mit Webull OpenAPI"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=2.0",
+  "pandas>=2.2",
+  "python-dotenv>=1.0",
+  "scikit-learn>=1.5",
+  "joblib>=1.4",
+  "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+live = ["webull-openapi-python-sdk"]
+dashboard = ["streamlit>=1.40"]
+windows = []
+exe = ["pyinstaller>=6.0"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+spike-scanner = "spike_scanner.cli:main"
+momentum-scanner-gui = "spike_scanner.windows_app:main"
+orderflow-monitor = "spike_scanner.orderflow_cli:main"
+orderflow-monitor-gui = "spike_scanner.orderflow_app:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+spike_scanner = ["assets/*"]
