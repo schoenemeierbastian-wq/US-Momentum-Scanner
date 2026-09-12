@@ -51,6 +51,10 @@ _TRANSIENT_ERROR_MARKERS = (
 )
 
 
+class TransientNetworkError(RuntimeError):
+    """Expliziter vor?bergehender Webull-/HTTP-Netzwerkfehler."""
+
+
 def is_transient_network_error(error: BaseException | str) -> bool:
     """Erkennt vorübergehende Transportfehler, die gefahrlos wiederholt werden können."""
     if isinstance(error, str):
@@ -61,6 +65,8 @@ def is_transient_network_error(error: BaseException | str) -> bool:
         visited: set[int] = set()
         while current is not None and id(current) not in visited:
             visited.add(id(current))
+            if isinstance(current, TransientNetworkError):
+                return True
             parts.append(f"{type(current).__name__}: {current}")
             current = current.__cause__ or current.__context__
         text = " | ".join(parts).lower()
@@ -154,24 +160,30 @@ class WebullMarketDataProvider:
         base = max(0.5, float(self.settings.network_retry_base_seconds))
         return min(30.0, base * (2 ** max(0, attempt - 1)))
 
-    def _request_with_retry(self, label: str, call):
-        attempts = max(1, int(self.settings.network_retry_attempts))
+    def _request_with_retry(self, label: str, call, *, attempts_override: int | None = None):
+        configured = max(1, int(self.settings.network_retry_attempts))
+        attempts = (
+            configured
+            if attempts_override is None
+            else max(1, min(configured, int(attempts_override)))
+        )
         last_error: Exception | None = None
         for attempt in range(1, attempts + 1):
             try:
                 response = call()
                 status_code = getattr(response, "status_code", None)
-                if (
-                    status_code in _TRANSIENT_HTTP_CODES
-                    and attempt < attempts
-                ):
-                    wait = self._retry_wait(attempt)
-                    logger.warning(
-                        "%s: HTTP %s; neuer Versuch %s/%s in %.1f Sekunden",
-                        label, status_code, attempt + 1, attempts, wait,
+                if status_code in _TRANSIENT_HTTP_CODES:
+                    if attempt < attempts:
+                        wait = self._retry_wait(attempt)
+                        logger.warning(
+                            "%s: HTTP %s; neuer Versuch %s/%s in %.1f Sekunden",
+                            label, status_code, attempt + 1, attempts, wait,
+                        )
+                        time.sleep(wait)
+                        continue
+                    raise TransientNetworkError(
+                        f"{label}: HTTP {status_code}: {getattr(response, 'text', '')}"
                     )
-                    time.sleep(wait)
-                    continue
                 return response
             except Exception as exc:
                 last_error = exc
@@ -214,7 +226,9 @@ class WebullMarketDataProvider:
         ]
         for call in calls:
             try:
-                response = self._request_with_retry("Webull Screener", call)
+                response = self._request_with_retry(
+                    "Webull Screener", call, attempts_override=2
+                )
                 self._sleep()
                 if response.status_code == 200:
                     responses.append(response.json())
@@ -271,6 +285,7 @@ class WebullMarketDataProvider:
             lambda: self.client.market_data.get_history_bar(
                 symbol, Category.US_STOCK.name, Timespan.M1.name
             ),
+            attempts_override=1,
         )
         self._sleep()
         if response.status_code != 200:
@@ -294,6 +309,7 @@ class WebullMarketDataProvider:
                 depth=safe_depth,
                 overnight_required=False,
             ),
+            attempts_override=1,
         )
         self._sleep()
         if response.status_code != 200:
