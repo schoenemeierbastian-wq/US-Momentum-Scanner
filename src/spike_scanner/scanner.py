@@ -13,7 +13,7 @@ from spike_scanner.model_runtime import ProbabilityModelBundle
 from spike_scanner.models import Candidate, ScanResult
 from spike_scanner.paper_trading import PaperTradingEngine
 from spike_scanner.top_mover_10_shadow import TopMover10ShadowEngine
-from spike_scanner.providers.base import MarketDataProvider
+from spike_scanner.providers import MarketDataProvider, is_transient_network_error
 from spike_scanner.scoring import (
     MIN_TOP_SIGNAL_SCORE,
     combined_score,
@@ -50,6 +50,7 @@ class MomentumScanner:
         errors: list[str] = []
         observations: list[Candidate] = []
         captured_symbols: set[str] = set()
+        consecutive_transient_network_errors = 0
 
         try:
             universe = self.provider.discover_universe(self.settings.universe_size)
@@ -71,6 +72,7 @@ class MomentumScanner:
                     continue
 
                 bars = self.provider.get_bars(item.symbol, self.settings.bar_count)
+                consecutive_transient_network_errors = 0
                 self.storage.save_market_bars(item.symbol, bars)
                 captured_symbols.add(item.symbol.upper())
                 order_book = None
@@ -106,6 +108,17 @@ class MomentumScanner:
                     )
                 )
             except Exception as exc:
+                if is_transient_network_error(exc):
+                    consecutive_transient_network_errors += 1
+                    if consecutive_transient_network_errors >= 3:
+                        logger.error(
+                            "Scan nach %s aufeinanderfolgenden Netzwerkfehlern abgebrochen.",
+                            consecutive_transient_network_errors,
+                        )
+                        raise
+                else:
+                    consecutive_transient_network_errors = 0
+
                 message = f"{item.symbol}: {exc}"
                 logger.exception("Analyse fehlgeschlagen: %s", message)
                 errors.append(message)
