@@ -282,8 +282,11 @@ class WebullMarketDataProvider:
 
         response = self._request_with_retry(
             f"Minutenbalken {symbol}",
-            lambda: self.client.market_data.get_history_bar(
-                symbol, Category.US_STOCK.name, Timespan.M1.name
+            lambda: self.client.market_data.get_batch_history_bar(
+                [symbol],
+                Category.US_STOCK.name,
+                Timespan.M1.name,
+                count=str(max(1, int(count))),
             ),
             attempts_override=1,
         )
